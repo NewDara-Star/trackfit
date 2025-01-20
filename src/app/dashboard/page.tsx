@@ -1,6 +1,7 @@
 "use client";
 import { useAuth } from "../../../context/AuthContext";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 
@@ -15,6 +16,20 @@ export default function Dashboard() {
   const { user, supabase } = useAuth();
   const router = useRouter();
 
+  useEffect(() => {
+    if (!user) {
+      router.push("/login");
+    }
+  }, [user, router]);
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-xl">
+        Redirecting...
+      </div>
+    );
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
@@ -27,11 +42,11 @@ export default function Dashboard() {
       </h1>
       <p className="text-gray-600 mt-2">Choose your workout for today:</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-6 w-full max-w-sm">
         {workouts.map((workout) => (
           <Card
             key={workout.name}
-            className="cursor-pointer hover:bg-gray-200 transition shadow-md"
+            className="cursor-pointer hover:bg-gray-200 transition shadow-md border border-gray-300 rounded-lg"
             onClick={() => router.push(workout.route)}
           >
             <CardContent className="p-6 text-center">
@@ -43,7 +58,11 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <Button variant="destructive" onClick={handleLogout} className="mt-6">
+      <Button
+        variant="destructive"
+        onClick={handleLogout}
+        className="mt-6 w-full max-w-sm py-3 text-lg"
+      >
         Logout
       </Button>
     </div>

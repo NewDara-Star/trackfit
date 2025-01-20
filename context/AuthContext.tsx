@@ -18,18 +18,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const getUser = async () => {
-      try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
-        if (error) console.error("Error fetching session:", error.message);
-        setUser(session);
-      } catch (error) {
-        console.error("Unexpected error:", error);
-      } finally {
-        setLoading(false);
-      }
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setUser(session);
+      setLoading(false);
     };
 
     getUser();
@@ -41,7 +34,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     );
 
     return () => {
-      authListener?.subscription.unsubscribe();
+      authListener?.subscription?.unsubscribe();
     };
   }, []);
 
