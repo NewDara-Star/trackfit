@@ -13,24 +13,27 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isSignUp, setIsSignUp] = useState(false); // Toggle between login & sign-up
 
   if (user) {
     router.push("/dashboard");
     return null;
   }
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    let result;
+    if (isSignUp) {
+      result = await supabase.auth.signUp({ email, password });
+    } else {
+      result = await supabase.auth.signInWithPassword({ email, password });
+    }
 
-    if (error) {
-      setError(error.message);
+    if (result.error) {
+      setError(result.error.message);
     } else {
       router.push("/dashboard");
     }
@@ -39,11 +42,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <Card className="w-full max-w-sm">
+    <div className="flex items-center justify-center min-h-screen bg-gray-100 px-6">
+      <Card className="w-full max-w-sm shadow-md">
         <CardContent className="p-6">
-          <CardTitle className="text-xl text-center">Login</CardTitle>
-          <form onSubmit={handleLogin} className="flex flex-col gap-4 mt-4">
+          <CardTitle className="text-xl text-center">
+            {isSignUp ? "Sign Up" : "Login"}
+          </CardTitle>
+          <form onSubmit={handleAuth} className="flex flex-col gap-4 mt-4">
             <Input
               type="email"
               placeholder="Email"
@@ -60,9 +65,19 @@ export default function LoginPage() {
             />
             {error && <p className="text-red-500 text-sm">{error}</p>}
             <Button type="submit" disabled={loading} className="w-full">
-              {loading ? "Logging in..." : "Login"}
+              {loading ? "Processing..." : isSignUp ? "Sign Up" : "Login"}
             </Button>
           </form>
+          <p className="text-center text-sm text-gray-600 mt-3">
+            {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
+            <button
+              type="button"
+              className="text-blue-500 hover:underline"
+              onClick={() => setIsSignUp(!isSignUp)}
+            >
+              {isSignUp ? "Login" : "Sign Up"}
+            </button>
+          </p>
         </CardContent>
       </Card>
     </div>
