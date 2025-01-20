@@ -1,7 +1,9 @@
 "use client";
-import { useAuth } from "../../../context/AuthContext";
+
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useAuth } from "../../../context/AuthContext";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 
@@ -13,14 +15,31 @@ const workouts = [
 ];
 
 export default function Dashboard() {
-  const { user, supabase } = useAuth();
+  const { supabase, user } = useAuth();
   const router = useRouter();
+  const [profile, setProfile] = useState<{
+    nickname: string;
+    avatar_url: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!user) {
       router.push("/login");
+    } else {
+      supabase
+        .from("profiles")
+        .select("nickname, avatar_url")
+        .eq("id", user?.user?.id)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setProfile(data);
+          } else {
+            setProfile({ nickname: "User", avatar_url: null });
+          }
+        });
     }
-  }, [user, router]);
+  }, [user, supabase, router]);
 
   if (!user) {
     return (
@@ -37,11 +56,22 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 px-6">
-      <h1 className="text-3xl font-bold text-gray-900">
-        Welcome, {user?.user?.email}
-      </h1>
-      <p className="text-gray-600 mt-2">Choose your workout for today:</p>
+      {/* User Profile */}
+      <div className="flex flex-col items-center">
+        <Avatar className="w-20 h-20 rounded-full mb-3">
+          <AvatarImage
+            src={profile?.avatar_url || "/default-avatar.png"}
+            alt="User Avatar"
+          />
+          <AvatarFallback>{profile?.nickname?.charAt(0) || "U"}</AvatarFallback>
+        </Avatar>
+        <h1 className="text-3xl font-bold text-gray-900">
+          Welcome, {profile?.nickname || "User"}!
+        </h1>
+      </div>
 
+      {/* Workout Selection */}
+      <p className="text-gray-600 mt-2">Choose your workout for today:</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-6 w-full max-w-sm">
         {workouts.map((workout) => (
           <Card
@@ -58,6 +88,7 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* Logout Button */}
       <Button
         variant="destructive"
         onClick={handleLogout}
