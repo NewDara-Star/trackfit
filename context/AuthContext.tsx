@@ -19,13 +19,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter();
 
   useEffect(() => {
-    // Get initial session
     const initializeAuth = async () => {
       try {
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        setUser(session?.user || null);
+
+        if (session?.user) {
+          setUser(session.user);
+        }
       } catch (error) {
         console.error("Error getting session:", error);
       } finally {
@@ -35,24 +37,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     initializeAuth();
 
-    // Set up auth state listener
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user || null);
-      setLoading(false);
-    });
+    // Listen for authentication state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user || null);
+        setLoading(false);
+      }
+    );
 
-    // 🚀 Add Redirect Logic Here
-    if (!user && !loading) {
-      router.push("/login"); // ✅ Redirects to login if not logged in
-    }
-
-    // Cleanup subscription
     return () => {
-      subscription.unsubscribe();
+      authListener?.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    // ✅ Prevent redirecting while still loading
+    if (!loading && !user) {
+      console.log("User not found, redirecting to login...");
+      router.push("/login");
+    }
+  }, [user, loading, router]);
 
   return (
     <AuthContext.Provider value={{ user, loading, supabase }}>
@@ -63,7 +67,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;

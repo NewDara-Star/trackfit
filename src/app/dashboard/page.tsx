@@ -20,7 +20,7 @@ const workouts = [
   },
   {
     name: "Pull Day",
-    route: "/workout/pull",
+    route: "/workout/pull", // ✅ Fixed route
     description: "Back and biceps",
   },
   {
@@ -39,24 +39,35 @@ export default function Dashboard() {
   const { user, supabase } = useAuth();
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchProfile = async () => {
-      try {
-        if (!user?.id) {
-          console.log("No user ID found");
-          return;
-        }
+      if (!user?.id) {
+        console.log("No user found, checking session...");
 
-        // First, fetch the profile data
+        const fetchSession = async () => {
+          const { data: sessionData, error } = await supabase.auth.getSession();
+          if (error || !sessionData.session) {
+            console.log("No active session. Redirecting to login...");
+            router.push("/login");
+          }
+        };
+
+        fetchSession();
+        return;
+      }
+
+      try {
+        // Fetch profile data
         const { data: profileData, error } = await supabase
           .from("profiles")
           .select("nickname, avatar_url")
-          .eq("id", user.id) // Ensure user.id is correct
+          .eq("id", user.id)
           .single();
 
         if (error) {
-          console.error("Error fetching profile:", error);
+          console.error("Error fetching profile:", error.message);
           return;
         }
 
@@ -67,27 +78,29 @@ export default function Dashboard() {
 
         console.log("Raw profile data:", profileData); // Debug log
 
-        // If there's an avatar_url, get its public URL
-        let avatarPublicUrl = null;
-        if (profileData.avatar_url) {
-          const { data } = supabase.storage
-            .from("avatars")
-            .getPublicUrl(profileData.avatar_url);
-          avatarPublicUrl = data?.publicUrl;
-        }
+        // If there's an avatar_url, get its public URL properly
+        const avatarPublicUrl = profileData.avatar_url
+          ? supabase.storage
+              .from("avatars")
+              .getPublicUrl(profileData.avatar_url).data.publicUrl
+          : null;
 
-        // Set the profile with the processed data
+        // Update state
         setProfile({
-          nickname: profileData.nickname || "User",
-          avatar_url: avatarPublicUrl,
+          nickname: profileData.nickname || "Strongman",
+          avatar_url:
+            avatarPublicUrl ||
+            "https://lkmanlvujuoonfgvqlou.supabase.co/storage/v1/object/public/avatars/default-avatar.png",
         });
       } catch (error) {
         console.error("Profile fetch error:", error);
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchProfile();
-  }, [user, supabase]);
+  }, [user?.id, supabase, router]); // ✅ Ensures effect only runs when `user` or `supabase` changes
 
   const handleLogout = async () => {
     try {
@@ -97,6 +110,14 @@ export default function Dashboard() {
       console.error("Error signing out:", error);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-lg">
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 px-6">

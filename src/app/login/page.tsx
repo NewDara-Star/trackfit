@@ -27,11 +27,14 @@ export default function Auth() {
     setError("");
 
     try {
+      let userId: string | null = null;
+
       if (isSignUp) {
         if (password !== confirmPassword) {
           throw new Error("Passwords do not match");
         }
 
+        // 1️⃣ **Sign up user**
         const { data: authData, error: signUpError } =
           await supabase.auth.signUp({
             email,
@@ -39,47 +42,122 @@ export default function Auth() {
           });
 
         if (signUpError) throw signUpError;
-        if (!authData.user) throw new Error("No user data returned");
+        if (!authData?.user)
+          throw new Error("Sign-up successful, but user data is missing");
 
-        // 🔥 Debugging: Log the user ID before inserting the profile
-        console.log("User ID after sign-up:", authData.user.id);
+        console.log("Sign-up successful. Fetching session...");
 
-        let avatarUrl = null;
-        if (avatarFile) {
-          const fileExt = avatarFile.name.split(".").pop();
-          const fileName = `${authData.user.id}.${fileExt}`;
-          const filePath = `avatars/${fileName}`;
+        // 🔹 Wait for session to be available
+        const { data: sessionData } = await supabase.auth.getSession();
+        userId = sessionData?.session?.user?.id || null;
 
-          const { error: uploadError } = await supabase.storage
-            .from("avatars")
-            .upload(filePath, avatarFile, { upsert: true });
+        if (!userId)
+          throw new Error("Session not available. Try logging in manually.");
 
-          if (uploadError) throw uploadError;
+        console.log("User ID obtained:", userId);
 
-          const { data: publicUrl } = supabase.storage
-            .from("avatars")
-            .getPublicUrl(filePath);
+        // Redirect user to login
+        router.push("/login");
+      } else {
+        // 2️⃣ **User Logs In**
+        const { data: authData, error: signInError } =
+          await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
 
-          avatarUrl = publicUrl?.publicUrl || null;
+        if (signInError) throw signInError;
+        if (!authData?.user)
+          throw new Error("Sign-up successful, but user data is missing");
+
+        console.log("User created in auth.users:", authData.user.id);
+
+        // ✅ WAIT for the session to confirm user exists
+        await new Promise((resolve) => setTimeout(resolve, 3000)); // Small delay to let Supabase register the user
+
+        if (!userId)
+          throw new Error("Session not available. Try logging in manually.");
+
+        console.log("User ID confirmed:", userId);
+        userId = authData.session.user.id;
+        console.log("Login successful, checking profile for user:", userId);
+
+        // 🔹 Check if user profile exists
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("id", userId)
+          .single();
+
+        if (
+          !profileData ||
+          (profileError &&
+            typeof profileError === "object" &&
+            "message" in (profileError as unknown as { message?: string }) &&
+            (profileError as unknown as { message?: string }).message?.includes(
+              "No rows found"
+            ))
+        ) {
+          console.log("No profile found, creating a new profile...");
+
+          // 3️⃣ **Upload avatar if provided**
+          let avatarUrl: string | null = null;
+          if (avatarFile) {
+            const fileExt = avatarFile.name.split(".").pop();
+            const fileName = `${userId}.${fileExt}`;
+            const filePath = `avatars/${fileName}`;
+
+            const { error: uploadError } = await supabase.storage
+              .from("avatars")
+              .upload(filePath, avatarFile, { upsert: true });
+
+            if (uploadError) {
+              console.error("Avatar upload error:", uploadError);
+              throw new Error("Failed to upload avatar.");
+            }
+
+            // Get the public URL for the uploaded image
+            const { data: publicUrl } = await supabase.storage
+              .from("avatars")
+              .getPublicUrl(filePath);
+
+            avatarUrl = publicUrl?.publicUrl || null;
+          }
+
+          // 4️⃣ **Create Profile in Supabase**
+          if (userId) {
+            console.log("Creating profile with:", {
+              userId,
+              nickname,
+              avatarUrl,
+            });
+
+            const { error: insertError } = await supabase
+              .from("profiles")
+              .insert([
+                {
+                  id: userId,
+                  nickname: nickname || email.split("@")[0], // Default nickname if not provided
+                  avatar_url:
+                    avatarUrl ||
+                    "https://lkmanlvujuoonfgvqlou.supabase.co/storage/v1/object/public/avatars/default-avatar.png", // Ensure avatar URL is stored correctly
+                },
+              ]);
+
+            if (insertError) {
+              console.error("Profile creation error:", insertError.message);
+              throw new Error(
+                "Could not create profile. Check Supabase policies."
+              );
+            }
+
+            console.log("Profile created successfully!");
+          } else {
+            console.error("User ID is missing. Profile creation skipped.");
+          }
         }
 
-        avatarUrl = avatarUrl || "/default-avatar.png";
-
-        const profileData = {
-          id: authData.user.id, // ✅ Ensure we are using authData.user.id
-          nickname: nickname || email.split("@")[0],
-          avatar_url: avatarUrl,
-        };
-
-        // 🔥 Debugging: Log the profile data before inserting
-        console.log("Profile Data:", profileData);
-
-        const { error: profileError } = await supabase
-          .from("profiles")
-          .insert([profileData]);
-
-        if (profileError) throw profileError;
-
+        // 🔹 Redirect user to dashboard
         router.push("/dashboard");
       }
     } catch (err) {
@@ -106,16 +184,16 @@ export default function Auth() {
               onChange={(e) => setEmail(e.target.value)}
               required
             />
+            <Label>Password</Label>
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
             {isSignUp && (
               <>
-                <Label>Password</Label>
-                <Input
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
                 <Label>Confirm Password</Label>
                 <Input
                   type="password"
@@ -127,7 +205,7 @@ export default function Auth() {
                 <Label>Nickname (optional)</Label>
                 <Input
                   type="text"
-                  placeholder="Nickname"
+                  placeholder="Enter your nickname"
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                 />
@@ -139,18 +217,6 @@ export default function Auth() {
                     const file = e.target.files?.[0];
                     if (file) setAvatarFile(file);
                   }}
-                />
-              </>
-            )}
-            {!isSignUp && (
-              <>
-                <Label>Password</Label>
-                <Input
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
                 />
               </>
             )}
