@@ -7,6 +7,7 @@ module.exports = {
     "./src/app/workout/**/*.{js,ts,jsx,tsx}",
     "./src/app/dashboard/**/*.{js,ts,jsx,tsx}",
     "./src/app/login/**/*.{js,ts,jsx,tsx}",
+    "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {

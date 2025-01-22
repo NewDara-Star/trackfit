@@ -7,63 +7,106 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 
+interface Profile {
+  nickname: string;
+  avatar_url: string | null;
+}
+
 const workouts = [
-  { name: "Push Day", route: "/workout/push" },
-  { name: "Pull Day", route: "/workout/pull" },
-  { name: "Leg Day", route: "/workout/legs" },
-  { name: "Full Body", route: "/workout/full-body" },
+  {
+    name: "Push Day",
+    route: "/workout/push",
+    description: "Chest, shoulders, and triceps",
+  },
+  {
+    name: "Pull Day",
+    route: "/workout/pull",
+    description: "Back and biceps",
+  },
+  {
+    name: "Leg Day",
+    route: "/workout/legs",
+    description: "Quadriceps, hamstrings, and calves",
+  },
+  {
+    name: "Full Body",
+    route: "/workout/full-body",
+    description: "Complete body workout",
+  },
 ];
 
 export default function Dashboard() {
-  const { supabase, user } = useAuth();
+  const { user, supabase } = useAuth();
   const router = useRouter();
-  const [profile, setProfile] = useState<{
-    nickname: string;
-    avatar_url: string | null;
-  } | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   useEffect(() => {
-    if (!user) {
-      router.push("/login");
-    } else {
-      supabase
-        .from("profiles")
-        .select("nickname, avatar_url")
-        .eq("id", user?.user?.id)
-        .single()
-        .then(({ data }) => {
-          if (data) {
-            setProfile(data);
-          } else {
-            setProfile({ nickname: "User", avatar_url: null });
-          }
-        });
-    }
-  }, [user, supabase, router]);
+    const fetchProfile = async () => {
+      try {
+        if (!user?.id) {
+          console.log("No user ID found");
+          return;
+        }
 
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen text-xl">
-        Redirecting...
-      </div>
-    );
-  }
+        // First, fetch the profile data
+        const { data: profileData, error } = await supabase
+          .from("profiles")
+          .select("nickname, avatar_url")
+          .eq("id", user.id) // Ensure user.id is correct
+          .single();
+
+        if (error) {
+          console.error("Error fetching profile:", error);
+          return;
+        }
+
+        if (!profileData) {
+          console.log("No profile data found");
+          return;
+        }
+
+        console.log("Raw profile data:", profileData); // Debug log
+
+        // If there's an avatar_url, get its public URL
+        let avatarPublicUrl = null;
+        if (profileData.avatar_url) {
+          const { data } = supabase.storage
+            .from("avatars")
+            .getPublicUrl(profileData.avatar_url);
+          avatarPublicUrl = data?.publicUrl;
+        }
+
+        // Set the profile with the processed data
+        setProfile({
+          nickname: profileData.nickname || "User",
+          avatar_url: avatarPublicUrl,
+        });
+      } catch (error) {
+        console.error("Profile fetch error:", error);
+      }
+    };
+
+    fetchProfile();
+  }, [user, supabase]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
+    try {
+      await supabase.auth.signOut();
+      router.push("/login");
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
   };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 px-6">
-      {/* User Profile */}
-      <div className="flex flex-col items-center">
+      {/* User Profile Section */}
+      <div className="flex flex-col items-center mb-8">
         <Avatar className="w-20 h-20 rounded-full mb-3">
-          <AvatarImage
-            src={profile?.avatar_url || "/default-avatar.png"}
-            alt="User Avatar"
-          />
-          <AvatarFallback>{profile?.nickname?.charAt(0) || "U"}</AvatarFallback>
+          <AvatarImage src={profile?.avatar_url || undefined} alt="Profile" />
+          <AvatarFallback>
+            {profile?.nickname?.[0]?.toUpperCase() || "U"}
+          </AvatarFallback>
         </Avatar>
         <h1 className="text-3xl font-bold text-gray-900">
           Welcome, {profile?.nickname || "User"}!
@@ -71,29 +114,24 @@ export default function Dashboard() {
       </div>
 
       {/* Workout Selection */}
-      <p className="text-gray-600 mt-2">Choose your workout for today:</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-6 w-full max-w-sm">
+      <p className="text-gray-600 mb-4">Choose your workout for today:</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-4xl">
         {workouts.map((workout) => (
           <Card
             key={workout.name}
-            className="cursor-pointer hover:bg-gray-200 transition shadow-md border border-gray-300 rounded-lg"
+            className="cursor-pointer hover:shadow-lg transition-shadow"
             onClick={() => router.push(workout.route)}
           >
-            <CardContent className="p-6 text-center">
-              <CardTitle className="text-lg font-semibold">
-                {workout.name}
-              </CardTitle>
+            <CardContent className="p-6">
+              <CardTitle className="text-xl mb-2">{workout.name}</CardTitle>
+              <p className="text-gray-500">{workout.description}</p>
             </CardContent>
           </Card>
         ))}
       </div>
 
       {/* Logout Button */}
-      <Button
-        variant="destructive"
-        onClick={handleLogout}
-        className="mt-6 w-full max-w-sm py-3 text-lg"
-      >
+      <Button variant="outline" onClick={handleLogout} className="mt-8">
         Logout
       </Button>
     </div>

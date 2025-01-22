@@ -1,100 +1,93 @@
 "use client";
-import { useState, useEffect } from "react";
+
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../../context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Alert } from "@/components/ui/alert";
 
-export default function LoginPage() {
-  const { supabase, user } = useAuth();
+export default function Auth() {
+  const { supabase } = useAuth();
   const router = useRouter();
+  const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
-  const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [avatarFile, setAvatarFile] = useState<File | null>(null); // Profile image
-
-  // 🔥 Fix: Redirect only after rendering
-  useEffect(() => {
-    if (user) {
-      router.push("/dashboard");
-    }
-  }, [user, router]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    // 🔹 Validate password confirmation
-    if (isSignUp && password !== confirmPassword) {
-      setError("Passwords do not match!");
-      setLoading(false);
-      return;
-    }
-
-    let result;
-    if (isSignUp) {
-      result = await supabase.auth.signUp({ email, password });
-
-      if (result.error) {
-        setError(result.error.message);
-        setLoading(false);
-        return;
-      }
-
-      const userId = result.data.user?.id;
-
-      // 🔹 Upload profile image if provided
-      let avatarUrl = null;
-      if (avatarFile && userId) {
-        const { data, error: uploadError } = await supabase.storage
-          .from("avatars")
-          .upload(`public/${userId}`, avatarFile);
-
-        if (uploadError) {
-          setError(uploadError.message);
-          setLoading(false);
-          return;
+    try {
+      if (isSignUp) {
+        if (password !== confirmPassword) {
+          throw new Error("Passwords do not match");
         }
 
-        // 🔥 Fix: Use `data.path` to construct the avatar URL
-        if (data) {
-          avatarUrl = `${
-            supabase.storage.from("avatars").getPublicUrl(data.path).data
-              .publicUrl
-          }`;
-        }
-        avatarUrl = `${
-          supabase.storage.from("avatars").getPublicUrl(`public/${userId}`).data
-            .publicUrl
-        }`;
-      }
+        const { data: authData, error: signUpError } =
+          await supabase.auth.signUp({
+            email,
+            password,
+          });
 
-      // 🔹 Save user profile (nickname & avatar) to Supabase database
-      await supabase.from("profiles").insert([
-        {
-          id: userId,
-          email,
-          nickname,
+        if (signUpError) throw signUpError;
+        if (!authData.user) throw new Error("No user data returned");
+
+        // 🔥 Debugging: Log the user ID before inserting the profile
+        console.log("User ID after sign-up:", authData.user.id);
+
+        let avatarUrl = null;
+        if (avatarFile) {
+          const fileExt = avatarFile.name.split(".").pop();
+          const fileName = `${authData.user.id}.${fileExt}`;
+          const filePath = `avatars/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from("avatars")
+            .upload(filePath, avatarFile, { upsert: true });
+
+          if (uploadError) throw uploadError;
+
+          const { data: publicUrl } = supabase.storage
+            .from("avatars")
+            .getPublicUrl(filePath);
+
+          avatarUrl = publicUrl?.publicUrl || null;
+        }
+
+        avatarUrl = avatarUrl || "/default-avatar.png";
+
+        const profileData = {
+          id: authData.user.id, // ✅ Ensure we are using authData.user.id
+          nickname: nickname || email.split("@")[0],
           avatar_url: avatarUrl,
-        },
-      ]);
-    } else {
-      result = await supabase.auth.signInWithPassword({ email, password });
-    }
+        };
 
-    if (result.error) {
-      setError(result.error.message);
-    } else {
-      router.push("/dashboard");
-    }
+        // 🔥 Debugging: Log the profile data before inserting
+        console.log("Profile Data:", profileData);
 
-    setLoading(false);
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .insert([profileData]);
+
+        if (profileError) throw profileError;
+
+        router.push("/dashboard");
+      }
+    } catch (err) {
+      console.error("Auth error:", err);
+      setError(err instanceof Error ? err.message : "An error occurred");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -105,6 +98,7 @@ export default function LoginPage() {
             {isSignUp ? "Sign Up" : "Login"}
           </CardTitle>
           <form onSubmit={handleAuth} className="flex flex-col gap-5">
+            <Label>Email</Label>
             <Input
               type="email"
               placeholder="Email"
@@ -114,13 +108,7 @@ export default function LoginPage() {
             />
             {isSignUp && (
               <>
-                <Input
-                  type="text"
-                  placeholder="Nickname"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  required
-                />
+                <Label>Password</Label>
                 <Input
                   type="password"
                   placeholder="Password"
@@ -128,6 +116,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
+                <Label>Confirm Password</Label>
                 <Input
                   type="password"
                   placeholder="Confirm Password"
@@ -135,28 +124,42 @@ export default function LoginPage() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                 />
-                <input
+                <Label>Nickname (optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="Nickname"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                />
+                <Label>Profile Image</Label>
+                <Input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
-                  className="border p-2 rounded-md"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) setAvatarFile(file);
+                  }}
                 />
               </>
             )}
             {!isSignUp && (
-              <Input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+              <>
+                <Label>Password</Label>
+                <Input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </>
             )}
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+            {error && <Alert variant="destructive">{error}</Alert>}
             <Button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-md"
+              variant="default"
+              className="w-full py-3"
             >
               {loading ? "Processing..." : isSignUp ? "Sign Up" : "Login"}
             </Button>
